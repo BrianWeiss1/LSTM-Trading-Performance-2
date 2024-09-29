@@ -3,10 +3,8 @@ import pandas as pd
 
 from datetime import datetime, timedelta
 from sklearn.preprocessing import MinMaxScaler
-import numpy as np
-import talib
 
-from special_functions import log_returns, normalize_cci, normalize_macd
+from special_functions import get_conventional_indicators_data, log_returns, normalize_cci, normalize_macd
 
 def get_data(timeFrame="5"):
     api_key = 'your_api_key'
@@ -60,43 +58,6 @@ def fix_data(csv_file: str):
     df = df.between_time('04:00', '20:00')
     return df
 
-def get_conventional_indicators_data(df):
-    # ------- Normalized After ------- #
-    df['SMA_20'] = talib.SMA(df['Close'], timeperiod=20)
-    df['EMA_9'] = talib.EMA(df['Close'], timeperiod=9)
-    df['EMA_21']  = talib.EMA(df['Close'], timeperiod=21)
-    
-    # BB Bands
-    upperband, middleband, lowerband = talib.BBANDS(df['Close'], timeperiod=20, nbdevup=2, nbdevdn=2)
-    df['UBBand'] = upperband
-    df['LBBand'] = lowerband
-    
-    df["AD"] = talib.AD(df['High'], df['Low'], df['Close'], df['Volume'])
-
-    
-    # ------- Normalized After ------- #
-    
-    
-    # ------- Custom Normalization ------- #
-    macd, macdsignal, macdhist = talib.MACD(df['Close'], fastperiod=12, slowperiod=26, signalperiod=9)
-    df['MACD'] = normalize_macd(macdhist)
-    
-    k, d = talib.STOCH(df['High'], df['Low'], df['Close'], 
-            fastk_period=14, slowk_period=3, slowd_period=3)    
-    df['STOCH'] = (k - d)/100 
-
-    df['RSI']  = talib.RSI(df['Close'], timeperiod=14)/100 
-    
-    
-    df['CCI'] = (talib.CCI(df['High'], df['Low'], df['Close'], timeperiod=14)).apply(normalize_cci)
-    
-    df["ATR"] = (talib.ATR(df['High'], df['Low'], df['Close'], timeperiod=14)) / df['Close']    
-    # ------- Custom Normalization ------- #
-
-    # ------- Already Normalized ------- #
-    df['CMF'] = (( ( (df['Close'] - df['Low']) - (df['High'] - df['Close']) ) / (df['High'] - df['Low']) ) * df['Volume']).rolling(window=21).sum() / df['Volume'].rolling(window=21).sum()
-    # ------- Already Normalized ------- #
-    return df
     
 
 def normalize_data(csv_file: str):
@@ -126,7 +87,5 @@ def normalize_data(csv_file: str):
 
 
 if __name__ == '__main__':
-    # get_data()
     df = normalize_data("5min_data_SPY_2019_to_2024.csv")
     
-    # 1. macd doesnt work.
