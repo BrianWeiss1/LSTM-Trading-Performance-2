@@ -8,58 +8,80 @@ from keras.callbacks import Callback
 from keras.layers import Input
 from keras.callbacks import ModelCheckpoint
 
-from process_data import fix_data
 from special_functions import inverse_log_returns
 
-# Load your data
-  # Replace this with your data loading logic
-actions = ['buy', 'sell', 'hold']
+import numpy as np
+import keras
+from keras.models import Sequential
+from keras.layers import LSTM, Dense
 
+# Define the LSTMAgent class for making trading decisions
+class LSTMAgent:
+    def __init__(self, state_size, action_size):
+        self.state_size = state_size
+        self.action_size = action_size
+        self.model = self.build_model()
+
+    def build_model(self):
+        model = Sequential()
+        model.add(Input(shape=(X_train.shape[1], X_train.shape[2])))  # Add the Input layer
+        model.add(LSTM(50, return_sequences=True))
+        model.add(Dropout(0.1))
+
+        model.add(LSTM(50, return_sequences=True))
+        model.add(Dropout(0.1))
+
+        model.add(LSTM(50, return_sequences=False))
+        model.add(Dropout(0.1))
+
+        model.add(Dense(y_train.shape[1]))  # Output layer
+        model.compile(loss='mean_squared_error', optimizer='adam')
+        return model
+
+    def select_action(self, state):
+        # Use the model to predict Q-values and choose the action
+        state = np.reshape(state, (1, self.state_size, 1))
+        q_values = self.model.predict(state)
+        return np.argmax(q_values[0])  # Action with the highest Q-value
+
+    def update(self, state, action, reward, next_state):
+        # Update the model based on the action taken and the reward received
+        target = reward + 0.92 * np.max(self.model.predict(next_state))
+        target_f = self.model.predict(state)
+        target_f[0][action] = target
+        self.model.fit(state, target_f, epochs=1, verbose=0)
+
+
+# Load your data
 df = pd.read_csv("Data/SPY/Normalized/normalized_5min_data_SPY_2019_to_2024.csv.csv", index_col=0, parse_dates=True)
-defaultDF = fix_data("Data/SPY/5min_data_SPY_2019_to_2024.csv")
-defaultDF = defaultDF[defaultDF.index >= '2019-01-01']
+
+# Split data into training and testing sets
 train_data = df[(df.index < '2024-01-01') & (df.index > '2019-01-01')]  # Data from 2019 to end of 2023 for training
 test_data = df[df.index >= '2024-01-01']  # Data from 2024 onwards for testing
-print(train_data)
-print(defaultDF)
 df.reset_index(drop=True, inplace=True)
-defaultDF.reset_index(drop=True, inplace=True)
-# defaultDF = df.copy(deep=True)
-
 
 # Remove the datetime column if it exists
-if 'datetime' in defaultDF.columns:
-    df.drop(columns=['datetime'], inplace=True)
-if 'Unnamed: 0' in defaultDF.columns:
-    df.drop(columns=['Unnamed: 0'], inplace=True)
 if 'datetime' in df.columns:
     df.drop(columns=['datetime'], inplace=True)
 if 'Unnamed: 0' in df.columns:
     df.drop(columns=['Unnamed: 0'], inplace=True)
     
 print(df.head())
-print(defaultDF.head())
+
 # Define the model checkpoint
 checkpoint = ModelCheckpoint(
     'model_epoch_{epoch:02d}.keras',  # Filename format, saving each model as a .h5 file
     save_freq='epoch',              # Save every epoch
     save_best_only=False,           # Change to True if you only want to save the best model
-    # period=2,                       # Save every 2 epochs
     verbose=1                       # Print messages when saving
 )
 
+# Custom callback to log epoch end
 class EpochLogger(Callback):
     def on_epoch_end(self, epoch, logs=None):
         print(f'Epoch {epoch + 1} completed.')
-        
-def get_reward(profit, time_held):
-    if profit > 0:
-        return profit - (time_held * 0.01)  # A small penalty for holding too long
-    else:
-        return -abs(profit) - (time_held * 0.01)  # Larger penalty for losses
 
-
-# Create sequences
+# Create sequences for training
 def create_sequences(data, timesteps=400, target_steps=20):
     X, y = [], []
     for i in range(len(data) - timesteps - target_steps):
@@ -68,91 +90,56 @@ def create_sequences(data, timesteps=400, target_steps=20):
     return np.array(X), np.array(y)
 
 # Create sequences with 400 timesteps and predicting the next 20 candles
-print("Start making")
-
-
+print("Start making sequences")
 X_train, y_train = create_sequences(train_data, timesteps=400)
 X_test, y_test = create_sequences(test_data, timesteps=400)
-print("created sequences")
+print("Sequences created")
 
-# Split into training and testing sets
+# Convert to float32 for Keras
 X_train = X_train.astype(np.float32)
 y_train = y_train.astype(np.float32)
 X_test = X_test.astype(np.float32)
 y_test = y_test.astype(np.float32)
 
-# Build the LSTM model
-model = Sequential()
-model.add(Input(shape=(X_train.shape[1], X_train.shape[2])))  # Add the Input layer
-model.add(LSTM(50, return_sequences=True))
-model.add(Dropout(0.1))
+# Define state and action sizes for agent
+state_size = X_train.shape[1]
+action_size = 3  # Buy, Sell, Hold
 
-model.add(LSTM(50, return_sequences=True))
-model.add(Dropout(0.1))
+# Create LSTM agent
+agent = LSTMAgent(state_size, action_size)
 
-model.add(LSTM(50, return_sequences=False))
-model.add(Dropout(0.1))
+# Train the model with the agent
+print("Starting agent training...")
+agent.model.fit(X_train, y_train, batch_size=32, epochs=3, validation_split=0.1, callbacks=[EpochLogger(), checkpoint])
 
-model.add(Dense(y_train.shape[1]))  # Output layer
-
-# Compile the model
-model.compile(optimizer='adam', loss='mean_squared_error')
-# Train the model
-print("Starting model training...")
-model.fit(X_train, y_train, batch_size=32, epochs=3, validation_split=0.1, callbacks=[EpochLogger(), checkpoint])
-
-# Evaluate the model
-loss = model.evaluate(X_test, y_test)
-print(f"Test Loss: {loss}")
-
-# Making predictions
-predictions = model.predict(X_test)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-print(predictions)
+# Making predictions using the agent
+predictions = agent.model.predict(X_test)
 predictions = inverse_log_returns(predictions)  # Rescale back to original values if necessary
 print(predictions)
-# Now, classify trades and calculate total profit/loss
-# Assume `actual_data` is your DataFrame with the actual prices (not normalized)
+
+# Load actual prices for calculating profit/loss
 actual_data = pd.read_csv("Data/SPY/Actual/actual_5min_data_SPY_2019_to_2024.csv")
 
-# Initialize variables
+# Initialize variables for trading simulation
 total_profit = 0
 position = 0  # 1 for long position, -1 for short position, 0 for no position
 buy_price = 0
 
-
-def classtify(current, future):
-    if float(future) > float(current)*1.005: # will gain 0.5% or more
+# Function to classify trades based on current and future prices
+def classify_trade(current, future):
+    if float(future) > float(current) * 1.005:  # Gain 0.5% or more
         return 1
-    elif float(future) < float(current)*1.005: # will gain 0.5% or more
+    elif float(future) < float(current) * 0.995:  # Loss 0.5% or more
         return -1
     else:
         return 0 
-
 
 # Iterate through the predictions and actual prices
 for i in range(len(predictions) - 1):
     current_price = actual_data.iloc[i]["close"]  # Get the current price from the actual data
     future_price = predictions[i + 1][0]  # Get the predicted future price (adjust index if needed)
 
-    action = classtify(current_price, future_price)
+    action = classify_trade(current_price, future_price)
 
     if action == 1 and position == 0:  # Buy signal
         position = 1  # Enter long position
@@ -176,16 +163,15 @@ for i in range(len(predictions) - 1):
         total_profit += profit
         print(f"Covering short at {current_price}, Profit: {profit}")
 
-# If still holding a position at the end, calculate final profit/loss
-if position == 1:  # Still holding a long position
+# Calculate final profit/loss if holding a position
+if position == 1:  # Holding a long position
     final_profit = actual_data.iloc[-1]["close"] - buy_price
     total_profit += final_profit
     print(f"Final Selling at {actual_data.iloc[-1]['close']}, Profit: {final_profit}")
 
-elif position == -1:  # Still holding a short position
+elif position == -1:  # Holding a short position
     final_profit = buy_price - actual_data.iloc[-1]["close"]
     total_profit += final_profit
     print(f"Final Covering at {actual_data.iloc[-1]['close']}, Profit: {final_profit}")
 
 print(f"Total Profit/Loss: {total_profit}")
-# predictions now contains the predicted future prices

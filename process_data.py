@@ -53,15 +53,14 @@ def get_data(timeFrame="5"):
     print(full_data)
 
 def fix_data(csv_file: str):
-    df = pd.read_csv(f"Data/SPY/{csv_file}", index_col=0, parse_dates=True)
+    df = pd.read_csv(f"{csv_file}", index_col=0, parse_dates=True)
     df = df[~df.index.duplicated(keep='first')]
     df = df.between_time('04:00', '20:00')
     return df
 
-    
-
 def normalize_data(csv_file: str):
-    df = fix_data(csv_file)
+    
+    df = fix_data(f"Data/SPY/{csv_file}")
     scaler = MinMaxScaler()
     normalized_volume = scaler.fit_transform(df['Volume'].values.reshape(-1, 1))
     df['Close_L'] = log_returns(df, 'Close')
@@ -76,6 +75,11 @@ def normalize_data(csv_file: str):
     df['UBBand'] = log_returns(df, 'UBBand')
     df['LBBand'] = log_returns(df, 'LBBand')
     df['AD'] = scaler.fit_transform(df['AD'].values.reshape(-1, 1))
+    print(df)
+    df.to_csv('min_data_SPY_2019_to_2024.csv')
+
+    print(f"Data saved to min_data_SPY_2019_to_2024.csv")
+    # print(full_data)
 
     df.drop(['Open', 'High', 'Low', 'Close', 'Volume'], axis=1, inplace=True)
     df = df.dropna()  

@@ -13,6 +13,11 @@ def normalize_cci(value):
 def log_returns(df: pd.DataFrame, column: str):
     return np.log(df[column] / df[column].shift(1))
 
+def log_returns(df: pd.DataFrame, column: str):
+    return np.log(df[column] / df[column].shift(1))
+
+
+
 def inverse_log_returns(df: pd.DataFrame, column: str):
     # Initialize a new column for original prices
     original_prices = np.zeros(len(df))  # Create an array to hold original prices
